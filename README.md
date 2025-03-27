@@ -69,7 +69,7 @@ ROS Parameters
 
 ## Citation
 
-If you find our work helpful in your research, you can star our repo and consider citing:
+If you find this code or paper is helpful, you can **star** this repository and cite our paper by the following **BibTeX** entry:
 
 ```bibtex
 @ARTICLE{10938329,
