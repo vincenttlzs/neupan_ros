@@ -3,7 +3,7 @@
 This is the ROS wrapper for [NeuPAN Planner](https://github.com/hanruihua/neupan).
 
 ## Prerequisites
-
+- Ubuntu 20.04
 - ROS Noetic
 - Python >= 3.10
 - [NeuPAN Planner](https://github.com/hanruihua/neupan).
