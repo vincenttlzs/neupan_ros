@@ -77,9 +77,9 @@ If you find this code or paper is helpful, you can **star** this repository and 
   journal={IEEE Transactions on Robotics}, 
   title={NeuPAN: Direct Point Robot Navigation With End-to-End Model-Based Learning}, 
   year={2025},
-  volume={},
+  volume={41},
   number={},
-  pages={1-20},
+  pages={2804-2824},
   doi={10.1109/TRO.2025.3554252}}
 ```
 
