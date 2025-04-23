@@ -8,6 +8,9 @@ This is the ROS wrapper for [NeuPAN Planner](https://github.com/hanruihua/neupan
 - Python >= 3.10
 - Installed [NeuPAN Planner](https://github.com/hanruihua/neupan).
 
+> [!Note] 
+> If you want to use python3.8 to run this project without virtual environment, you can install the py38 branch of NeuPAN Planner: https://github.com/hanruihua/NeuPAN/tree/py38
+
 ## Installation
 
 ```bash
