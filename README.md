@@ -71,7 +71,8 @@ ROS Parameters
 
 ## License
 
-Copyright 2025 Ruihua Han
+Copyright 2025 Ruihua Han.
+
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
 
 ## Citation
