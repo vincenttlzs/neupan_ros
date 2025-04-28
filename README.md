@@ -69,6 +69,10 @@ ROS Parameters
 | `~refresh_initial_path` | `bool` / `False`     | Whether to refresh the initial path.                     |
 | `~flip_angle`           | `bool` / `False`     | Whether to flip the angle of the scan data.              |
 
+## License
+
+Copyright 2025 Ruihua Han
+This project is licensed under the [GNU General Public License v3.0](LICENSE).
 
 ## Citation
 
