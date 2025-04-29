@@ -2,6 +2,8 @@
 
 This is the ROS wrapper for [NeuPAN Planner](https://github.com/hanruihua/neupan).
 
+If you find this code or paper is helpful, please kindly **Star** this repository and cite our paper by the [**BibTeX**](#citation) entry to support.
+
 ## Prerequisites
 - Ubuntu 20.04
 - ROS Noetic
@@ -74,8 +76,6 @@ ROS Parameters
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
 
 ## Citation
-
-If you find this code or paper is helpful, you can **star** this repository and cite our paper by the following **BibTeX** entry:
 
 ```bibtex
 @ARTICLE{10938329,
