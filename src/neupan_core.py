@@ -167,7 +167,7 @@ class neupan_core:
             self.arrive = info["arrive"]
 
             if info["arrive"]:
-                print(action)
+                # print(action)
                 rospy.loginfo_throttle(0.1, "arrive at the target")
 
             # publish the path and velocity
