@@ -68,6 +68,7 @@ ROS Parameters
 | `~dune_checkpoint`      | `str` / `None`       | The path of the DUNE checkpoint file.                    |
 | `~refresh_initial_path` | `bool` / `False`     | Whether to refresh the initial path.                     |
 | `~flip_angle`           | `bool` / `False`     | Whether to flip the angle of the scan data.              |
+| `~include_initial_path_direction` | `bool` / `False`     | Whether to set the initial path direction from the given path. If `False`, the points gradient will be used as the initial path direction.            |
 
 ## License
 

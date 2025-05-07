@@ -59,6 +59,7 @@ class neupan_core:
         self.dune_checkpoint = rospy.get_param("~dune_checkpoint", None)
         self.refresh_initial_path = rospy.get_param("~refresh_initial_path", False)
         self.flip_angle = rospy.get_param("~flip_angle", False)
+        self.include_initial_path_direction = rospy.get_param("~include_initial_path_direction", False)
 
         if self.planner_config_file is None:
             raise ValueError(
@@ -166,6 +167,7 @@ class neupan_core:
             self.arrive = info["arrive"]
 
             if info["arrive"]:
+                print(action)
                 rospy.loginfo_throttle(0.1, "arrive at the target")
 
             # publish the path and velocity
@@ -178,10 +180,10 @@ class neupan_core:
             self.robot_marker_pub.publish(self.generate_robot_marker_msg())
 
             if info["stop"]:
-                rospy.loginfo_throttle(
-                    0.1,
+                rospy.logwarn_throttle(
+                    0.5,
                     "neupan stop with the min distance "
-                    + str(self.neupan_planner.min_distance)
+                    + str(self.neupan_planner.min_distance.detach().item())
                     + " threshold "
                     + str(self.neupan_planner.collision_threshold),
                 )
@@ -253,19 +255,31 @@ class neupan_core:
 
     def path_callback(self, path):
 
-        rospy.loginfo_throttle(0.1, "target path update")
-
         initial_point_list = []
 
-        for p in path.poses:
+        for i in range(len(path.poses)):
+            p = path.poses[i]
             x = p.pose.position.x
             y = p.pose.position.y
-            theta = self.quat_to_yaw(p.pose.orientation)
+            
+            if self.include_initial_path_direction:
+                theta = self.quat_to_yaw(p.pose.orientation)
+            else:
+                rospy.loginfo_once("Using the points gradient as the initial path direction")
 
+                if i + 1 < len(path.poses):
+                    p2 = path.poses[i + 1]
+                    x2 = p2.pose.position.x
+                    y2 = p2.pose.position.y
+                    theta = atan2(y2 - y, x2 - x)
+                else:
+                    theta = initial_point_list[-1][2, 0]
+            
             points = np.array([x, y, theta, 1]).reshape(4, 1)
             initial_point_list.append(points)
 
         if self.neupan_planner.initial_path is None or self.refresh_initial_path:
+            rospy.loginfo_throttle(0.1, "target path update")
             self.neupan_planner.set_initial_path(initial_point_list)
 
 
