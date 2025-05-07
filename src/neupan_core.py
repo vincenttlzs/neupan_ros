@@ -309,7 +309,7 @@ class neupan_core:
 
             ps.pose.position.x = point[0, 0]
             ps.pose.position.y = point[1, 0]
-            ps.pose.orientation.w = 1
+            ps.pose.orientation = self.yaw_to_quat(point[2, 0])
 
             path.poses.append(ps)
 
