@@ -28,7 +28,7 @@ sh source_setup.sh && source ~/neupan_ws/devel/setup.sh && rosdep install neupan
 
 We provide the dynamic collision avoidance examples in Gazebo shown as follows. To run these examples, please see [example/gazebo_limo](https://github.com/hanruihua/neupan_ros/tree/main/example/gazebo_limo) for detail.
 
-https://github.com/user-attachments/assets/db9edbfe-94d9-4a58-98ee-6b30e64dd3d9
+https://github.com/user-attachments/assets/1d5eb028-0d22-4741-8899-40a3ea7caab4
 
 ## Node API 
 
