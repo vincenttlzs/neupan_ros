@@ -295,6 +295,7 @@ class neupan_core:
 
         rospy.loginfo_throttle(0.1, "reference path update")
         self.neupan_planner.update_initial_path_from_goal(self.robot_state, self.goal)
+        self.neupan_planner.reset()
 
 
     def quat_to_yaw_list(self, quater):
