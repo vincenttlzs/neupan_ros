@@ -22,7 +22,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from neupan import neupan
 import rospy
-from geometry_msgs.msg import Twist, PoseStamped, Quaternion, PoseWithCovarianceStamped
+from geometry_msgs.msg import Twist, PoseStamped, Quaternion, PoseWithCovarianceStamped, PointStamped, TransformStamped
 from nav_msgs.msg import Odometry, Path
 from visualization_msgs.msg import MarkerArray, Marker
 from sensor_msgs.msg import LaserScan, PointCloud2
@@ -30,7 +30,18 @@ from math import sin, cos, atan2
 import numpy as np
 from neupan.util import get_transform
 import tf
+import tf2_ros
+import tf.transformations as tf_trans  # 确保导入了必要的模块
 import sensor_msgs.point_cloud2 as pc2
+import numpy as np
+
+import json
+import asyncio
+import websockets
+import json
+import subprocess
+import math
+import threading 
 
 
 class neupan_core:
@@ -43,8 +54,12 @@ class neupan_core:
         self.map_frame = rospy.get_param("~map_frame", "map")
         self.base_frame = rospy.get_param("~base_frame", "base_link")
         self.lidar_frame = rospy.get_param("~lidar_frame", "laser_link")
+        self.vio_frame  = rospy.get_param('~PandarQT', 'PandarQT')  # 子坐标系
         self.marker_size = float(rospy.get_param("~marker_size", "0.05"))
         self.marker_z = float(rospy.get_param("~marker_z", "1.0"))
+
+        # 创建TF广播器
+        self.br = tf2_ros.TransformBroadcaster()
 
         scan_angle_range_para = rospy.get_param("~scan_angle_range", "-3.14 3.14")
         self.scan_angle_range = np.fromstring(
@@ -70,7 +85,6 @@ class neupan_core:
         self.neupan_planner = neupan.init_from_yaml(
             self.planner_config_file, pan=pan
         )
-        # print()
 
         # data
         self.obstacle_points = None  # (2, n)  n number of points
@@ -78,6 +92,7 @@ class neupan_core:
         self.stop = False
 
         # publisher
+        self.goal_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=10)
         self.vel_pub = rospy.Publisher("/neupan_cmd_vel", Twist, queue_size=10)
         self.plan_pub = rospy.Publisher("/neupan_plan", Path, queue_size=10)
         self.ref_state_pub = rospy.Publisher(
@@ -97,6 +112,8 @@ class neupan_core:
         )
 
         self.listener = tf.TransformListener()
+        self.tf_buffer = tf2_ros.Buffer() 
+        self.goal = None
 
         # subscriber
         rospy.Subscriber("/scan", LaserScan, self.scan_callback)
@@ -108,7 +125,140 @@ class neupan_core:
         rospy.Subscriber("/initial_path", Path, self.path_callback)
         rospy.Subscriber("/neupan_waypoints", Path, self.waypoints_callback)
         rospy.Subscriber("/neupan_goal", PoseStamped, self.goal_callback)
-        
+
+        self.websocket = None
+        self.full_path = []
+        websocket_thread = threading.Thread(
+            target=self.start_websocket, 
+            daemon=True  # 设为守护线程，主程序退出时自动结束
+        )
+        websocket_thread.start()
+        print("neupan node init finish")
+
+
+    async def handle_websocket(self, websocket, path):
+        async for message in websocket:
+            try:
+                data = json.loads(message)
+                msg_type =  data.get('frame_id', "vio")
+                # print(data)
+                
+                if msg_type == "vio":
+                    t = TransformStamped()
+                    t.header.stamp = rospy.Time.now()
+                    t.header.frame_id = self.map_frame  # 父坐标系
+                    t.child_frame_id = self.base_frame  # 子坐标系
+                    t.transform.translation.x = data.get('y', 0.0)
+                    t.transform.translation.y = - data.get('x', 0.0)
+                    t.transform.translation.z = data.get('z', 0.0)
+
+                    # 先获取原始四元数并保存到变量中
+                    orig_qx = data.get('qx', 0.0)
+                    orig_qy = data.get('qy', 0.0)
+                    orig_qz = data.get('qz', 0.0)
+                    orig_qw = data.get('qw', 1.0)
+
+                    t.transform.rotation.x = orig_qx
+                    t.transform.rotation.y = orig_qy
+                    t.transform.rotation.z = orig_qz
+                    t.transform.rotation.w = orig_qw
+                    
+                    roll, pitch, yaw = tf_trans.euler_from_quaternion([orig_qx, orig_qy, orig_qz, orig_qw])
+                    swapped_roll = -roll #- 2 * np.pi
+                    swapped_pitch = -pitch #(roll + np.pi / 2)
+                    swapped_yaw = yaw
+                    adjusted_quat = tf_trans.quaternion_from_euler(swapped_roll, swapped_pitch, swapped_yaw)
+                    # # print(swapped_roll, swapped_pitch, swapped_yaw, roll, pitch, yaw)
+
+                    # # 设置调整后的旋转分量
+                    # t.transform.rotation.x = adjusted_quat[0]
+                    # t.transform.rotation.y = adjusted_quat[1]
+                    # t.transform.rotation.z = adjusted_quat[2]
+                    # t.transform.rotation.w = adjusted_quat[3]
+                    self.br.sendTransform(t)
+                    
+
+                    ##
+                    # t2 = TransformStamped()
+                    # t2.header.stamp = rospy.Time.now()
+                    # t2.header.frame_id = self.map_frame  # 父坐标系
+                    # t2.child_frame_id = self.vio_frame  # 子坐标系
+                    # t2.transform.translation.x = data.get('y', 0.0)
+                    # t2.transform.translation.y = - data.get('x', 0.0)
+                    # t2.transform.translation.z = data.get('z', 0.0)
+
+                    # adjusted_quat = tf_trans.quaternion_from_euler(swapped_roll, swapped_pitch, swapped_yaw)
+                    # t2.transform.rotation.x = adjusted_quat[0]
+                    # t2.transform.rotation.y = adjusted_quat[1]
+                    # t2.transform.rotation.z = adjusted_quat[2]
+                    # t2.transform.rotation.w = adjusted_quat[3]
+                    # self.br.sendTransform(t2)
+                    # print(t2)
+
+                else:
+                    print(data)
+                    x = data.get('x', 0.0)
+                    y = data.get('y', 0.0)
+                    yaw = data.get('yaw', 0.0)
+                    qz = math.sin(yaw/2)  
+                    qw = math.cos(yaw/2) 
+                    frame_id = self.vio_frame
+
+                    print("test", x, " ", y, " ", yaw)
+
+                    goal_msg = PoseStamped()
+                    goal_msg.header.seq = 0
+                    goal_msg.header.stamp = rospy.Time.now()  # 使用当前时间戳
+                    goal_msg.header.frame_id = frame_id       # 坐标系ID
+                    goal_msg.pose.position.x = y
+                    goal_msg.pose.position.y = -x
+                    goal_msg.pose.position.z = 0.0
+                    
+                    goal_msg.pose.orientation.z = qz
+                    goal_msg.pose.orientation.w = qw
+
+                    # goal_msg = self.listener.transformPose(self.map_frame, goal_msg)
+                    
+                    # 发布消息
+                    self.goal_pub.publish(goal_msg)
+                    rospy.loginfo(f"已发布目标点到/move_base_simple/goal: frame_id={frame_id}, x={x}, y={y}")
+
+                if self.websocket == None or self.websocket != websocket:
+                    self.websocket = websocket
+                
+            except json.JSONDecodeError:
+                await websocket.send(json.dumps({
+                    "status": "error",
+                    "message": "无效的JSON格式"
+                }))
+            except Exception as e:
+                await websocket.send(json.dumps({
+                    "status": "error",
+                    "message": f"处理请求时出错: {str(e)}"
+                }))
+
+    def start_websocket(self):
+        # 启动WebSocket服务的协程函数
+        async def _start_server():
+            self.websocket_server = await websockets.serve(
+                self.handle_websocket, 
+                "0.0.0.0", 
+                8766
+            )
+            # 保持服务运行（直到被关闭）
+            await self.websocket_server.wait_closed()
+
+        # 在新的事件循环中运行WebSocket服务
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_start_server())
+        loop.close()
+
+    def stop_websocket(self):
+        if hasattr(self, 'websocket_server'):
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(self.websocket_server.close())
+
     def run(self):
 
         r = rospy.Rate(50)
@@ -117,7 +267,7 @@ class neupan_core:
 
             try:
                 (trans, rot) = self.listener.lookupTransform(
-                    self.map_frame, self.base_frame, rospy.Time(0)
+                    self.map_frame, self.base_frame, rospy.Time(0) # map_frame: odom base_frame vio_frame
                 )
 
                 yaw = self.quat_to_yaw_list(rot)
@@ -131,8 +281,8 @@ class neupan_core:
             ):
                 rospy.loginfo_throttle(
                     1,
-                    "waiting for tf for the transform from {} to {}".format(
-                        self.base_frame, self.map_frame
+                    "Waiting for tf for the transform from {} to {}".format(
+                        self.vio_frame, self.map_frame
                     ),
                 )
                 continue
@@ -166,6 +316,7 @@ class neupan_core:
                     1, "No obstacle points, only path tracking task will be performed"
                 )
 
+            # forward to get the nn resault
             action, info = self.neupan_planner(self.robot_state, self.obstacle_points)
 
             self.stop = info["stop"]
@@ -174,12 +325,13 @@ class neupan_core:
             if info["arrive"]:
                 # print(action)
                 rospy.loginfo_throttle(0.1, "arrive at the target")
-
+            else:
             # publish the path and velocity
-            self.plan_pub.publish(self.generate_path_msg(info["opt_state_list"]))
-            self.ref_state_pub.publish(self.generate_path_msg(info["ref_state_list"]))
-            self.vel_pub.publish(self.generate_twist_msg(action))
+            # self.plan_pub.publish(self.generate_path_msg(info["opt_state_list"]))
+                self.plan_pub.publish(self.generate_rb_path_msg(info["opt_state_list"]))
+                self.vel_pub.publish(self.generate_twist_msg(action))
 
+            self.ref_state_pub.publish(self.generate_path_msg(info["ref_state_list"]))
             self.point_markers_pub_dune.publish(self.generate_dune_points_markers_msg())
             self.point_markers_pub_nrmp.publish(self.generate_nrmp_points_markers_msg())
             self.robot_marker_pub.publish(self.generate_robot_marker_msg())
@@ -232,17 +384,20 @@ class neupan_core:
         point_array = np.hstack(points)
 
         try:
-            (trans, rot) = self.listener.lookupTransform(
-                self.map_frame, self.lidar_frame, rospy.Time(0)
-            )
+            # (trans, rot) = self.listener.lookupTransform(
+            #     self.map_frame, self.vio_frame, rospy.Time(0)
+            # )
 
-            yaw = self.quat_to_yaw_list(rot)
-            x, y = trans[0], trans[1]
+            # yaw = self.quat_to_yaw_list(rot)
+            # x, y = trans[0], trans[1]
 
-            trans_matrix, rot_matrix = get_transform(np.c_[x, y, yaw].reshape(3, 1))
-            self.obstacle_points = rot_matrix @ point_array + trans_matrix
-            rospy.loginfo_once("Scan obstacle points Received")
+            # trans_matrix, rot_matrix = get_transform(np.c_[x, y, yaw].reshape(3, 1))
+            # self.obstacle_points = rot_matrix @ point_array + trans_matrix
+            # rospy.loginfo_once("Scan obstacle points Received")
 
+            # return self.obstacle_points
+
+            self.obstacle_points = point_array
             return self.obstacle_points
 
         except (
@@ -323,7 +478,14 @@ class neupan_core:
             self.neupan_planner.reset()
 
     def goal_callback(self, goal):
-
+        # goal.header.stamp = rospy.Time(0)
+        self.listener.waitForTransform(
+            self.map_frame,          # 目标坐标系
+            goal.header.frame_id,    # 源坐标系
+            goal.header.stamp,       # 目标时间戳
+            rospy.Duration(0.5)      # 超时时间
+        )
+        goal = self.listener.transformPose(self.map_frame, goal)
         x = goal.pose.position.x
         y = goal.pose.position.y
         theta = self.quat_to_yaw(goal.pose.orientation)
@@ -368,6 +530,87 @@ class neupan_core:
             path.poses.append(ps)
 
         return path
+    
+    # generate robot axe ros message
+    def generate_rb_path_msg(self, path_list):
+        path = Path()
+        path.header.frame_id = self.vio_frame
+        path.header.stamp = rospy.Time.now()
+        path.header.seq = 0
+
+        full_path = []
+        for index, point in enumerate(path_list):
+            ps = PoseStamped()
+            ps.header.frame_id = self.map_frame
+            ps.header.seq = index
+
+            if self.goal is not None and (self.goal[0,0] - point[0, 0]) **2 + (self.goal[1,0] - point[1, 0])** 2 < 0.25:
+                break
+
+            ps.pose.position.x = point[0, 0]
+            ps.pose.position.y = point[1, 0]
+            ps.pose.orientation = self.yaw_to_quat(point[2, 0])
+
+            ps_odom = self.listener.transformPose(self.vio_frame, ps)
+            path.poses.append(ps_odom)
+
+            full_path.append([-ps_odom.pose.position.y, ps_odom.pose.position.x, self.quat_to_yaw(ps.pose.orientation)])
+
+
+        if len(full_path) == 0:
+            return path
+
+        # if full_path[-1][0] ** 2 + full_path[-1][1] ** 2 < 0.25:
+        # print("End:", full_path[-1])
+
+        self.send_socket_path(full_path)
+
+        return path
+
+    def send_socket_path(self, full_path):
+        try:
+            if not self.websocket or self.websocket.closed:
+                return
+
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # 如果事件循环正在运行，使用create_task异步发送
+                loop.create_task(self.websocket.send(json.dumps({"path": json.dumps(full_path, ensure_ascii=False)})))
+            else:
+                # 如果事件循环未运行，直接运行发送操作
+                loop.run_until_complete(self.websocket.send(json.dumps({"path": json.dumps(full_path, ensure_ascii=False)})))
+                
+        except Exception as e:
+            print(f"err: {e}")
+
+    # def send_socket_path(self, full_path):
+    #     try:
+    #         if self.websocket:
+    #             # print("test")
+    #             asyncio.run(self.websocket.send(json.dumps({
+    #             "path": json.dumps(full_path, ensure_ascii=False),
+    #         })))
+                
+    #     except Exception as e:
+    #         print(f"err: {e}")
+    #     # finally:
+    #     #     if 'ws' in locals():
+    #     #         self.ws.close()
+
+
+    # def send_socket_goals(self, x, y, yaw):
+    #     try:
+    #         goal_data = {"x": x, "y": y, "yaw": yaw}
+    #         self.ws.send(json.dumps(goal_data))
+    #         response = self.ws.recv()
+    #         print(f"服务器响应: {json.loads(response)}")
+                
+    #     except Exception as e:
+    #         print(f"发生错误: {e}")
+    #     finally:
+    #         if 'ws' in locals():
+    #             self.ws.close()
+    #             print("连接已关闭")
 
     def generate_twist_msg(self, vel):
 
